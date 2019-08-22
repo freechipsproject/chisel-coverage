@@ -21,6 +21,7 @@ import scala.reflect.runtime.universe.TypeTag
 //  }
 //}
 
+/*
 case class CoverGroup (label: String,
                           module: RawModule,
                           clock: Clock,
@@ -36,6 +37,7 @@ case class CoverGroup (label: String,
     Seq(this.copy(points = points.map(_.update(renames))))
   }
 }
+*/
 
 case class GroupOptions(weight: Int = 1)
 

@@ -2,68 +2,51 @@ package coverage
 
 import chisel3._
 import chisel3.experimental.MultiIOModule
+import firrtl.annotations.ReferenceTarget
 
 /** Either records and bins the value of [in] every cycle, or cycles through all bins and prints the result
   *
-  * @param hinfo contains signal (and its type) as well as other histogramming information
-  * @param name name of the instance of the parent module containing the signal
-  * @param module name of the parent module containing the signal
+  * @param point contains signal (and its type) as well as other histogramming information
   */
-class CoverageTracker(hinfo: HistogramSignal, name: String, module: String) extends MultiIOModule {
-  val in = IO(Input(chiselTypeOf(hinfo.signal)))
-  val recording = IO(Input(Bool()))
+class CoverageTracker(point: CoverPoint) extends MultiIOModule {
+  val in = IO(Input(chiselTypeOf(point.signal)))
   val printCoverage = IO(Input(Bool()))
 
-  val inU = in.asUInt()
+  val intervals = point.intervals
+  val default = point.default
 
-  val lows = VecInit(hinfo.intervals.map(_._2.U))
-  val highs = VecInit(hinfo.intervals.map(_._3.U))
+  val lows = VecInit(intervals.map(_._2.U))
+  val highs = VecInit(intervals.map(_._3.U))
 
   // Calculate in's address into histogram
-  val activeBinAddress = hinfo.intervals.zipWithIndex.foldLeft(0.U) {
-    case (addr: UInt, ((_, min: Int, max: Int), index: Int)) => Mux((inU >= min.U) & (inU < max.U), index.U, addr)
-  }
+  val defaultIndex = if(default.isDefined) intervals.length else 0
 
-  // Instantiate coverage bins memory
-  val coverbins = Mem(math.pow(2, activeBinAddress.getWidth).toInt, chiselTypeOf(hinfo.maxCount.U))
+  val activeBinAddress = point.signal match {
+    case _: UInt =>
+      val inU = in.asUInt()
+      intervals.zipWithIndex.foldLeft(defaultIndex.U) {
+        case (addr: UInt, ((_, min: Int, max: Int), index: Int)) => Mux((inU >= min.U) & (inU <= max.U), index.U, addr)
+      }
+    case _: SInt =>
+      val inS = in.asSInt()
+      intervals.zipWithIndex.foldLeft(defaultIndex.U) {
+        case (addr: UInt, ((_, min: Int, max: Int), index: Int)) => Mux((inS >= min.S) & (inS <= max.S), index.U, addr)
+      }
+  }
 
   // Records which bins have been written to (and which require initialization)
-  val hasWritten = RegInit(VecInit(Seq.fill(coverbins.length.toInt)(false.B)))
-
-  // Represents the address of the current bin our input signal is falling into
-  val activeBinValue = Wire(chiselTypeOf(hinfo.maxCount.U))
-  when(hasWritten(activeBinAddress)) {
-    activeBinValue := coverbins.read(activeBinAddress)
-  }.otherwise {
-    activeBinValue := 0.U
-  }
+  val coverage = RegInit(VecInit(Seq.fill(math.pow(2, activeBinAddress.getWidth).toInt)(false.B)))
 
   // Then, do stuff
   when(reset.asBool() === false.B) {
-    when(recording) {
-      val writeValue = (activeBinValue + 1.U).min(hinfo.maxCount.U)
-      coverbins.write(activeBinAddress, writeValue)
-      hasWritten(activeBinAddress) := true.B
-    }
+    coverage(activeBinAddress) := true.B
+    //printf(s"${point.signal.toTarget.serialize} is %d, bin %d\n", in, activeBinAddress)
+  }
 
-    when(printCoverage) {
-      val (message, expsAll) = hinfo.intervals.zipWithIndex.foldLeft((s"Coverage of $name in module $module:\n", Seq.empty[Bits])) {
-        case ((str, exps), ((nameOpt, lo, hi), index)) =>
-          /*
-          val start = if (hinfo.label.isDefined) {
-            s"    ${hinfo.label.get}:"
-          } else s"    $index:"
-          */
-          val start = "    "
-          val (strRest, expsRest) = if (nameOpt.isDefined) {
-            (start + s"Bin ${nameOpt.get} ($lo to $hi) -> %d\n", Seq(coverbins.read(index.U)))
-          } else {
-            (start + s"Bin $index ($lo to $hi) -> %d\n", Seq(coverbins.read(index.U)))
-          }
-          (str + strRest, exps ++ expsRest)
-      }
-      printf(message, expsAll:_*)
-    }
+  def collectCoveragePoint(): CoveragePoint = {
+
+    val bins = coverage.map(_.toTarget).zip(intervals.map(_._1) ++ default)
+    CoveragePoint(point.signal.toAbsoluteTarget, point.endPoints.map(_.toAbsoluteTarget), point.label, bins, clock.toTarget, printCoverage.toTarget)
   }
 }
 

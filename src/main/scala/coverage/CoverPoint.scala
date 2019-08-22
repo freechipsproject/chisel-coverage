@@ -1,44 +1,38 @@
 package coverage
 
 import chisel3._
+import chisel3.experimental.ChiselAnnotation
 import firrtl.RenameMap
+import firrtl.annotations.{Annotation, NoTargetAnnotation, Target}
 
 //trait CoverBase { val label: String }
 
 
+/*
 object CoverPoint {
-  def apply(label: String, signal: Bits, bins: Seq[BaseBin], pointOptions: CoverOptions = CoverOptions()): CoverPoint = {
-    CoverPoint(label, SignalTracker(signal), bins, pointOptions)
+  def apply(label: String, signal: Bits, endPoints: Seq[Bits], clock: Clock, reset: Reset, bins: Seq[Bin], pointOptions: CoverOptions = CoverOptions()): CoverPoint = {
+    CoverPoint(label, SignalTracker(signal), endPoints.map(SignalTracker(_)), clock, reset, bins, pointOptions)
   }
 }
-case class CoverPoint private (label: String,
-                          signal: SignalTracker,
-                          bins: Seq[BaseBin],
-                          pointOptions: CoverOptions) {
-  def update(renames: RenameMap): CoverPoint = {
-    this.copy(signal = signal.singleUpdate(renames))
+*/
+case class CoverPoint (label: String,
+                       signal: Bits,
+                       endPoints: Seq[Bits],
+                       bins: Seq[Bin]) {
+  def default: Option[Bin] = {
+    bins.collectFirst { case b@Bin(l, Default) => b }
   }
-
-  /*
-  def generateChisel(clock: Clock, reset: Reset): Unit = {
-    val sig = signal.signal.asUInt()
-    withClockAndReset(clock, reset) {
-      val defaults = bins.collect { case b@Bin(_, Default) => b }
-      assert(defaults.size <= 1, s"Coverpoint $label on signal ${signal.signal.toTarget} can no more than one default bin.")
-      val inRanges = bins.map {
-        case Bin(label, BinRange(low, high)) =>
-          val (counter, willWrap) = util.Counter(sig >= low.U & sig <= high.U, pointOptions.maxCount)
-          counter.suggestName(label)
-          when(willWrap) {
-            counter := counter
-          }
-      }
-
+  def intervals: Seq[(Bin, Int, Int)] = {
+    val binIntervals = bins.filter { _.category.isInstanceOf[BinRange] }.sortBy {
+      case Bin(l, BinRange(low, high)) => low
     }
-
+    val intervals = binIntervals.map{
+      case b@Bin(l, BinRange(low, high)) => (b, low.toInt, high.toInt)
+    }
+    intervals
   }
-  */
 }
+
 case class CoverOptions(weights: Seq[Int] = Seq(1), maxCount: Int = 32)
 
 // TODO: I think you can get away without representing this directly and generating it programmatically
@@ -66,13 +60,19 @@ case class IgnoreBin(label: String, category: BinCategory) extends BaseBin {
 }
 
 
-trait BinCategory
+trait BinCategory {
+  def serialize: String
+}
 
 // Defaults to all non-specified categories
-case object Default extends BinCategory
+case object Default extends BinCategory {
+  override def serialize: String = "default"
+}
 
 // Low and High are inclusive
-case class BinRange(low: BigInt, high: BigInt) extends BinCategory
+case class BinRange(low: BigInt, high: BigInt) extends BinCategory {
+  override def serialize: String = s"$low->$high"
+}
 
 // A sequence of values that must be transitioned to, in order
 // Wait on this...
