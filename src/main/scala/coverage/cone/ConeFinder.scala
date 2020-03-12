@@ -1,9 +1,10 @@
 package coverage.cone
 
 import firrtl.analyses._
+import firrtl.annotations.TargetToken.{Clock, Init, Reset}
 import firrtl.annotations._
 import firrtl.ir._
-import firrtl.{FEMALE, MALE, PortKind}
+import firrtl.{FEMALE, MALE, PortKind, WRef, WSubField}
 
 import scala.collection.mutable
 
@@ -111,6 +112,7 @@ case class ConeFinder(reverseGraph: ConnectionGraph) extends ConnectionGraph(rev
 
     assert(ref2index.contains(node), s"${node.serialize}")
     val index = ref2index(node)
+    //println(s"$index: ${node.serialize}, $stmts")
 
     node match {
       // If find endpoint, tag path and end
@@ -138,7 +140,7 @@ case class ConeFinder(reverseGraph: ConnectionGraph) extends ConnectionGraph(rev
 
       // WInvalid Expression
       case rt if ConnectionGraph.isInvalid(rt) =>
-        val (width, tpe) = getConeInfo(rt)
+        val (width, tpe) = getConeInfo(prev(rt))
         stmts(index) = Invalid(width, tpe)
         Set()
 
@@ -160,21 +162,49 @@ case class ConeFinder(reverseGraph: ConnectionGraph) extends ConnectionGraph(rev
 
       case other =>
         val edges = super.getEdges(other)
-        val exp = irLookup.expr(other)
-        val indexes = edges.map{ rt =>
-          index2refs(index2refs.keys.size) = Set(rt)
-          val index = index2refs.keys.size - 1
-          ref2index(rt) = index
-          index
-        }.toSeq
-        exp match {
+        def getIndexes() = {
+          edges.map{ rt =>
+            index2refs(index2refs.keys.size) = Set(rt)
+            val index = index2refs.keys.size - 1
+            ref2index(rt) = index
+            index
+          }.toSeq
+        }
+        irLookup.expr(other) match {
           case DoPrim(op, args, consts, tpe) =>
-            stmts(index) = Assign(op.serialize, indexes, consts)
+            stmts(index) = Assign(op.serialize, getIndexes, consts)
           case Mux(c, t, f, tpe) =>
-            stmts(index) = Assign("mux", indexes, Nil)
+            stmts(index) = Assign("mux", getIndexes, Nil)
           case ValidIf(c, v, tpe) =>
-            stmts(index) = Assign("validif", indexes, Nil)
+            stmts(index) = Assign("validif", getIndexes, Nil)
           case nonOp =>
+            irLookup.declaration(other) match {
+              case d: DefRegister
+                if !(other.component.nonEmpty &&
+                  Set[TargetToken](Clock, Reset, Init).contains(other.component.last)) =>
+                val indexes = getIndexes()
+                stmts(index) = Assign("reg", indexes, Nil)
+              case _ =>
+                edges.foreach { rt =>
+                  ref2index(rt) = index
+                  index2refs(index) = index2refs(index) ++ Set(rt)
+                }
+                /*
+              case d: DefMemory =>
+                def onExp(e: Expression): Expression = e match {
+                  case WSubField(WSubField(WRef(mem, _, _, _), port, _, _), sig, _, _) =>
+                    port match {
+                      case r if d.readers.contains(port) =>
+                      case w if d.writers.contains(port) =>
+                      case rw if d.readwriters.contains(port) =>
+                    }
+                  case o => o mapExpr onExp
+                }
+                nonOp
+                stmts(index) = Assign("reg", indexes, Nil)
+                */
+
+            }
         }
         edges
     }

@@ -98,20 +98,27 @@ case class Database(quantas: Map[Cone, Quanta], name: String) {
 
     val file = new FileOutputStream(path + "/" + fileName)
     val out = new ObjectOutputStream(file)
+    out.flush()
 
     // Method for serialization of object
     out.writeObject(this)
 
+    out.flush()
     out.close()
+    file.flush()
     file.close()
 
     val filePretty = new FileOutputStream(path + "/" + fileName + ".txt")
     val outPretty = new ObjectOutputStream(filePretty)
+    filePretty.flush()
+    outPretty.flush()
 
     // Method for serialization of object
     outPretty.writeObject(this.prettySerialize())
 
+    outPretty.flush()
     outPretty.close()
+    filePretty.flush()
     filePretty.close()
 
     println("Database has been serialized")
@@ -119,6 +126,41 @@ case class Database(quantas: Map[Cone, Quanta], name: String) {
 }
 
 object Database {
+  def updateCoverage(name: String, messages: Seq[String], f: (Database, Seq[String]) => Database): Database = {
+    val fileName = s"artifacts/coverage/$name.db"
+    val fileIn = new FileInputStream(fileName)
+    val in = new ObjectInputStream(fileIn)
+    // Method for deserialization of object
+    val database = try {
+      in.readObject().asInstanceOf[Database]
+    } catch {
+      case e =>
+        println(fileName)
+        throw e
+    }
+
+    println("Database has been deserialized")
+
+    val finalDatabase = f(database, messages)
+
+    //val x = Database(database.quantas.map {
+    //  case (cone, quanta) => quanta.cone -> quanta
+    //}, database.name)
+
+
+    val fileOut = new FileOutputStream(fileName)
+    val out = new ObjectOutputStream(fileOut)
+    out.flush()
+
+    // Method for serialization of object
+    out.writeObject(finalDatabase)
+    in.close()
+    fileIn.close()
+    out.close()
+    fileOut.close()
+
+    finalDatabase
+  }
   def populateCoverage(name: String): Database = {
     val file = new File(s"artifacts/coverage/$name.db")
     if(file.exists()) {
@@ -134,13 +176,14 @@ object Database {
     val file = new FileInputStream(fileName)
     val in = new ObjectInputStream(file)
     // Method for deserialization of object
-    val database = in.readObject().asInstanceOf[Database]
+    val database =
+      in.readObject().asInstanceOf[Database]
+    in.close()
+    file.close()
+
     val x = Database(database.quantas.map {
       case (cone, quanta) => quanta.cone -> quanta
     }, database.name)
-
-    in.close()
-    file.close()
 
     println("Database has been deserialized")
 

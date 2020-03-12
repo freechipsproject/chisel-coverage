@@ -85,14 +85,17 @@ class CoverTransform extends Transform {
     newDatabase.writeCoverage()
 
     def processMessages(messages: Seq[String]): Unit = {
+      /*
       val database = Database.readCoverage(newDatabase.name)
-      val finalDatabase = Quanta.fromMessages(newDatabase, messages)
+      val finalDatabase = Quanta.fromMessages(database, messages)
       finalDatabase.writeCoverage()
+      */
+      val db = Database.updateCoverage(newDatabase.name, messages, Quanta.fromMessages)
       val viewMap = views.groupBy{kv => kv._1}
       val groups = viewMap.map {
         case (label, views) => GroupView(label, 1, 100, views.map(_._2))
       }
-      groups.foreach { g => println(g.serialize(finalDatabase)) }
+      groups.foreach { g => println(g.serialize(db)) }
     }
 
     (circuit.copy(modules = circuit.modules.map(m => newModuleMap(m.name))),

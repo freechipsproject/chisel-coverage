@@ -1,21 +1,13 @@
 package coverage
 
 import coverage.cone.{Assign, Cone, Terminal}
-import firrtl.PrimOps.{Add, Sub}
 import firrtl.annotations.ReferenceTarget
 import org.scalatest.FlatSpec
 import firrtl.ir
-import firrtl.ir.{UIntType, UnknownType}
+import firrtl.ir.UIntType
+import TestUtils._
 
 object DatabaseSpec {
-  implicit class StringRefTypeClass(str: String) {
-    def RT: ReferenceTarget = {
-      firrtl.annotations.Target.deserialize(str) match {
-        case r: ReferenceTarget => r
-        case other => sys.error(s"Cannot convert $str to a ReferenceTarget: $other")
-      }
-    }
-  }
   case class IntWidth(width: BigInt) extends ir.Width {
     override def serialize: String = width.toString
   }

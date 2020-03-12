@@ -76,4 +76,4 @@ lazy val firrtl  = project in file("./firrtl") settings commonSettings
 lazy val chisel  = project in file("./chisel3") settings commonSettings settings srcSettings dependsOn firrtl
 lazy val lib  = project in file("./riscv-mini/lib") settings commonSettings settings srcSettings dependsOn chisel dependsOn firrtl
 lazy val mini = project in file("./riscv-mini")  settings miniSettings settings srcSettings dependsOn lib dependsOn chisel dependsOn firrtl
-lazy val coverage  = project in file(".") settings commonSettings settings srcSettings dependsOn (mini % "test->test;test->compile;compile->test") dependsOn chisel dependsOn firrtl
+lazy val coverage  = project in file(".") settings commonSettings settings srcSettings dependsOn (mini % "test->test;test->compile;compile->test") dependsOn chisel dependsOn (firrtl % "compile->compile;test->test")
